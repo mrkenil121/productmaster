@@ -1,51 +1,33 @@
 <?php
+// app/Http/Controllers/API/AuthController.php
 
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\User;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
+use App\Http\Requests\LoginRequest;
+use App\Http\Requests\SignupRequest;
+use App\Services\AuthService;
 
 class AuthController extends Controller
 {
-    function signup(Request $request)
+    protected $authService;
+
+    public function __construct(AuthService $authService)
+    {
+        $this->authService = $authService;
+    }
+
+    public function signup(SignupRequest $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'name' => 'required|string',
-                'email' => 'required|email|unique:users,email',
-                'password' => 'required|string|min:8',
-                'password_confirmation' => 'required|string|same:password',
-                'mobile_no' => 'required|string|max:20',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation Error',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
-
-            $user = new User();
-            $user->name = $request->name;
-            $user->email = $request->email;
-            $user->password = bcrypt($request->password);
-            $user->mobile_no = $request->mobile_no;
-            $user->save();
-
-            $success = [
-                'token' => $user->createToken('authToken')->plainTextToken,
-                'name' => $user->name
-            ];
+            
+            $success = $this->authService->signup($request->validated());
 
             return response()->json([
                 'success' => true,
                 'result' => $success,
                 'message' => 'User created successfully',
-            ], 201);
+            ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
@@ -56,39 +38,41 @@ class AuthController extends Controller
         }
     }
 
-    function login(Request $request)
+    public function login(LoginRequest $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string',
-        ]);
+        try {
+            // Validation is now handled by the LoginRequest
+            $success = $this->authService->login($request->validated());
 
-        if (!Auth::attempt($request->only('email', 'password'))) {
+            return response()->json([
+                'success' => true,
+                'result' => $success,
+                'message' => 'User logged in successfully',
+            ], 200);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid credentials',
+                'message' => $e->getMessage()
             ], 401);
         }
+    }
 
-        $user = User::where('email', $request->email)->firstOrFail();
-        
-        // Check if user is active
-        if (!$user->is_active) {
+    public function logout()
+    {
+        try {
+            $this->authService->logout();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfully logged out',
+            ], 200);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Account is inactive',
+                'message' => $e->getMessage()
             ], 401);
         }
-
-        $success = [
-            'token' => $user->createToken('authToken')->plainTextToken,
-            'name' => $user->name
-        ];
-
-        return response()->json([
-            'success' => true,
-            'result' => $success,
-            'message' => 'User logged in successfully',
-        ], 200);
     }
 }
