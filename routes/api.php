@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\MoleculeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -24,4 +25,17 @@ Route::post('/signup', [AuthController::class, 'signup']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::prefix('molecules')->group(function () {
+        Route::get('/', [MoleculeController::class, 'index']);
+        Route::get('/active', [MoleculeController::class, 'getActive']);
+        // Route::get('/with-products', [MoleculeController::class, 'getWithProducts']);
+        Route::get('/{id}', [MoleculeController::class, 'show']);
+        Route::post('/', [MoleculeController::class, 'store']);
+        Route::put('/{id}', [MoleculeController::class, 'update']);
+        Route::delete('/{id}', [MoleculeController::class, 'destroy']);
+        Route::post('/{id}/restore', [MoleculeController::class, 'restore']);
+        Route::delete('/{id}/force', [MoleculeController::class, 'forceDelete']);
+    });
+
 });
