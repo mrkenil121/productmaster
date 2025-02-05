@@ -74,14 +74,34 @@ class ProductDraftController extends Controller
      */
     public function index(): JsonResponse
     {
-        $productDrafts = ProductDraft::with(['category', 'creator', 'updater'])
-            ->latest()
-            ->paginate(10);
+        try {
+            // Use Cache::remember to cache the product drafts for 6000 seconds (100 minutes)
+            $productDrafts = Cache::remember('product_drafts', 6000, function () {
+                return ProductDraft::with(['category', 'creator', 'updater'])
+                    ->latest()
+                    ->paginate(10);
+            });
 
-        return response()->json([
-            'success' => true,
-            'data' => $productDrafts
-        ]);
+            return response()->json([
+                'success' => true,
+                'data' => $productDrafts
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    private function updateProductDraftCache()
+    {
+        // Fetch all product drafts again and update cache
+        $productDrafts = ProductDraft::with(['category', 'creator', 'updater'])->latest()->get();
+        
+        // Store the updated product drafts in cache
+        Cache::put('product_drafts', $productDrafts, now()->addMinutes(100));
     }
 
     /**
@@ -96,7 +116,6 @@ class ProductDraftController extends Controller
 
             // Validate and generate combination if molecule IDs are provided
             if (isset($validatedData['molecule_ids'])) {
-                // Validate molecule IDs
                 if (!$this->validateMoleculeIds($validatedData['molecule_ids'])) {
                     return response()->json([
                         'success' => false,
@@ -104,7 +123,6 @@ class ProductDraftController extends Controller
                     ], 400);
                 }
 
-                // Generate combination string
                 $combination = $this->generateCombinationString($validatedData['molecule_ids']);
                 
                 if ($combination === null) {
@@ -128,6 +146,9 @@ class ProductDraftController extends Controller
 
             DB::commit();
 
+            // **Update the cache after storing**
+            $this->updateProductDraftCache();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Product draft created successfully',
@@ -143,6 +164,7 @@ class ProductDraftController extends Controller
         }
     }
 
+
     // Similar modifications for update method
     public function update(UpdateProductDraftRequest $request, ProductDraft $productDraft): JsonResponse
     {
@@ -153,7 +175,6 @@ class ProductDraftController extends Controller
 
             // Validate and generate combination if molecule IDs are provided
             if (isset($validatedData['molecule_ids'])) {
-                // Validate molecule IDs
                 if (!$this->validateMoleculeIds($validatedData['molecule_ids'])) {
                     return response()->json([
                         'success' => false,
@@ -161,7 +182,6 @@ class ProductDraftController extends Controller
                     ], 400);
                 }
 
-                // Generate combination string
                 $combination = $this->generateCombinationString($validatedData['molecule_ids']);
                 
                 if ($combination === null) {
@@ -172,8 +192,6 @@ class ProductDraftController extends Controller
                 }
 
                 $validatedData['combination'] = $combination;
-
-                // Sync molecules
                 $productDraft->molecules()->sync($validatedData['molecule_ids']);
             }
 
@@ -186,6 +204,9 @@ class ProductDraftController extends Controller
             $productDraft->update($validatedData);
 
             DB::commit();
+
+            // **Update the cache after updating**
+            $this->updateProductDraftCache();
 
             return response()->json([
                 'success' => true,
@@ -202,21 +223,52 @@ class ProductDraftController extends Controller
         }
     }
 
+
     /**
      * Display the specified product draft.
      */
-    public function show(ProductDraft $productDraft): JsonResponse
+    public function show($id): JsonResponse
     {
-        $productDraft->load(['category', 'creator', 'updater', 'publisher']);
+        try {
+            // Retrieve all product drafts from cache
+            $productDrafts = Cache::get('product_drafts');
 
-        return response()->json([
-            'success' => true,
-            'data' => $productDraft
-        ]);
+            if ($productDrafts) {
+                // Search for the product by ID within the cached collection
+                $productDraft = collect($productDrafts)->firstWhere('id', $id);
+
+                if ($productDraft) {
+                    return response()->json([
+                        'success' => true,
+                        'data' => $productDraft
+                    ]);
+                }
+            }
+
+            // If not found in cache, fetch from database
+            $productDraft = ProductDraft::with(['category', 'creator', 'updater', 'publisher'])->find($id);
+
+            if ($productDraft) {
+                return response()->json([
+                    'success' => true,
+                    'data' => $productDraft
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Product not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
-     * Soft delete the specified product draft.
+     *  Soft delete the specified product draft.
      */
     public function destroy(ProductDraft $productDraft): JsonResponse
     {
@@ -228,6 +280,9 @@ class ProductDraftController extends Controller
             $productDraft->delete();
 
             DB::commit();
+
+            // **Remove deleted product from cache**
+            $this->updateProductDraftCache();
 
             return response()->json([
                 'success' => true,
@@ -243,6 +298,7 @@ class ProductDraftController extends Controller
         }
     }
 
+
     /**
      * Publish a product draft.
      */
@@ -252,27 +308,28 @@ class ProductDraftController extends Controller
             DB::beginTransaction();
 
             // Generate unique code when publishing
-            if( $productDraft->publish_status != 'published')
-            {
-                if($productDraft->code === null)
-                {
+            if ($productDraft->publish_status != 'published') {
+                if ($productDraft->code === null) {
                     $productDraft->code = $this->generateUniqueProductCode();
                 }
 
-            $productDraft->publish_status = 'published';
-            $productDraft->published_by = Auth::id();
-            $productDraft->published_at = now();
-            $productDraft->save();
+                $productDraft->publish_status = 'published';
+                $productDraft->published_by = Auth::id();
+                $productDraft->published_at = now();
+                $productDraft->save();
 
-            PublishProduct::dispatch($productDraft);
+                PublishProduct::dispatch($productDraft);
 
-            DB::commit();
+                DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Product draft published successfully',
-                'data' => $productDraft
-            ]);
+                // **Update cache after publishing**
+                $this->updateProductDraftCache();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Product draft published successfully',
+                    'data' => $productDraft
+                ]);
             } else {
                 return response()->json([
                     'success' => false,
@@ -289,6 +346,7 @@ class ProductDraftController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Generate a unique product code.
