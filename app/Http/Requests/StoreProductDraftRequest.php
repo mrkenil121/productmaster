@@ -14,6 +14,7 @@ class StoreProductDraftRequest extends FormRequest
 
     public function rules(): array
     {
+       
         return [
             'name' => 'required|string|max:255',
             'manufacturer' => 'required|string|max:255',
@@ -70,15 +71,3 @@ class StoreProductDraftRequest extends FormRequest
     }
 }
 
-class UpdateProductDraftRequest extends StoreProductDraftRequest
-{
-    public function rules(): array
-    {
-        $rules = parent::rules();
-        
-        // Remove unique validation for combination during update
-        unset($rules['combination']);
-        
-        return $rules;
-    }
-}

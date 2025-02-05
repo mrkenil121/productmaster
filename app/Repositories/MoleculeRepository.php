@@ -101,7 +101,7 @@ class MoleculeRepository implements MoleculeRepositoryInterface
      */
     public function restore($id)
     {
-        $molecule = $this->modelwithTrashed()->find($id);
+        $molecule = $this->model->withTrashed()->find($id);
         
         if (!$molecule) {
             return false;

@@ -90,10 +90,4 @@ class MoleculeController extends Controller
         $molecules = $this->moleculeRepository->getActive();
         return response()->json($molecules);
     }
-
-    public function getWithProducts()
-    {
-        $molecules = $this->moleculeRepository->getWithProducts();
-        return response()->json($molecules);
-    }
 }

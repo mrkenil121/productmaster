@@ -20,7 +20,7 @@ return new class extends Migration
             $table->decimal('sales_price', 10, 2);
             $table->foreignId('category_id')->constrained('categories')->onDelete('restrict');
             $table->enum('publish_status', ['draft', 'published', 'unpublished'])->default('draft');
-            $table->string('combination');
+            $table->string('combination')->nullable;
 
             $table->boolean('is_banned')->default(false);
             $table->boolean('is_active')->default(true);

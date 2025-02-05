@@ -25,6 +25,7 @@ class ProductDraft extends Model
         'is_discontinued',
         'is_assured',
         'is_refrigerated',
+        'combination',
         'created_by',
         'updated_by'
     ];
@@ -48,6 +49,11 @@ class ProductDraft extends Model
     public function category()
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function molecules()
+    {
+        return $this->belongsToMany(Molecule::class, 'product_molecules', 'product_id', 'molecule_id');
     }
 
     // User relationships

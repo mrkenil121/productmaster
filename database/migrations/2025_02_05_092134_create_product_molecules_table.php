@@ -17,7 +17,8 @@ return new class extends Migration
             
             $table->primary(['product_id', 'molecule_id']);
             
-            $table->foreign('product_id')->references('id')->on('products')->onDelete('cascade');
+            // Change this line to reference products_draft instead of products
+            $table->foreign('product_id')->references('id')->on('products_draft')->onDelete('cascade');
             $table->foreign('molecule_id')->references('id')->on('molecules')->onDelete('cascade');
             
             $table->timestamps();

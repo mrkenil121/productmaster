@@ -30,6 +30,7 @@ class Product extends Model
         'manufacturer',
         'mrp',
         'sales_price',
+        'combination',
         'is_banned',
         'is_active',
         'is_discontinued',
@@ -54,13 +55,6 @@ class Product extends Model
         'deleted_at' => 'datetime',
         'published_at' => 'datetime',
     ];
-
-    // Relationships
-    public function molecules()
-    {
-        return $this->belongsToMany(Molecule::class, 'product_molecules')
-                    ->withTimestamps();
-    }
 
     // User relationships
     public function creator()

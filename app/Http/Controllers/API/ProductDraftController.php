@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\Molecule;
+Use App\Jobs\PublishProduct;
 
 trait ProductDraftCombinationTrait
 {
@@ -177,6 +179,10 @@ class ProductDraftController extends Controller
 
             $validatedData['updated_by'] = Auth::id();
 
+            if ($productDraft->publish_status !== 'draft') {
+                $validatedData['publish_status'] = 'unpublished';
+            }
+            
             $productDraft->update($validatedData);
 
             DB::commit();
@@ -246,11 +252,19 @@ class ProductDraftController extends Controller
             DB::beginTransaction();
 
             // Generate unique code when publishing
-            $productDraft->code = $this->generateUniqueProductCode();
+            if( $productDraft->publish_status != 'published')
+            {
+                if($productDraft->code === null)
+                {
+                    $productDraft->code = $this->generateUniqueProductCode();
+                }
+
             $productDraft->publish_status = 'published';
             $productDraft->published_by = Auth::id();
             $productDraft->published_at = now();
             $productDraft->save();
+
+            PublishProduct::dispatch($productDraft);
 
             DB::commit();
 
@@ -259,26 +273,21 @@ class ProductDraftController extends Controller
                 'message' => 'Product draft published successfully',
                 'data' => $productDraft
             ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product is already published.',
+                    'data' => $productDraft
+                ], 200);
+            }
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to publish product draft',
+                'message' => 'Failed to queue product draft for publishing',
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Generate a unique product combination.
-     */
-    private function generateUniqueCombination(): string
-    {
-        do {
-            $combination = 'DRAFT-' . strtoupper(bin2hex(random_bytes(4)));
-        } while (ProductDraft::where('combination', $combination)->exists());
-
-        return $combination;
     }
 
     /**
@@ -286,11 +295,20 @@ class ProductDraftController extends Controller
      */
     private function generateUniqueProductCode(): string
     {
-        do {
-            $code = 'PRD-' . strtoupper(bin2hex(random_bytes(4)));
-        } while (ProductDraft::where('code', $code)->exists());
+        // Fetch the latest published product code
+        $latestProduct = ProductDraft::whereNotNull('code')
+            ->orderByDesc('code')
+            ->first();
 
-        return $code;
+        if ($latestProduct && is_numeric($latestProduct->code)) {
+            // Increment the latest code by 1
+            $newCode = str_pad($latestProduct->code + 1, 6, '0', STR_PAD_LEFT);
+        } else {
+            // If no existing product, start from "000001"
+            $newCode = '000001';
+        }
+
+        return $newCode;
     }
 
     /**
@@ -362,22 +380,10 @@ class ProductDraftController extends Controller
         ]);
     }
 
-    /**
-     * Permanently delete a product draft.
-     */
     public function forceDelete(ProductDraft $productDraft): JsonResponse
     {
         try {
             DB::beginTransaction();
-
-            // Check if the user has permission to force delete
-            // You might want to add more sophisticated authorization logic
-            if (!Auth::user()->hasPermissionTo('force_delete_product_drafts')) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized to force delete product drafts'
-                ], 403);
-            }
 
             $productDraft->forceDelete();
 
@@ -393,191 +399,6 @@ class ProductDraftController extends Controller
                 'success' => false,
                 'message' => 'Failed to force delete product draft',
                 'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Unpublish a published product draft.
-     */
-    public function unpublish(ProductDraft $productDraft): JsonResponse
-    {
-        try {
-            DB::beginTransaction();
-
-            if ($productDraft->publish_status !== 'published') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Only published drafts can be unpublished'
-                ], 400);
-            }
-
-            $productDraft->publish_status = 'unpublished';
-            $productDraft->published_by = null;
-            $productDraft->published_at = null;
-            $productDraft->code = null; // Remove the generated code
-            $productDraft->save();
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Product draft unpublished successfully',
-                'data' => $productDraft
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to unpublish product draft',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk publish product drafts.
-     */
-    public function bulkPublish(Request $request): JsonResponse
-    {
-        $validatedData = $request->validate([
-            'draft_ids' => 'required|array',
-            'draft_ids.*' => 'exists:products_draft,id'
-        ]);
-
-        $successIds = [];
-        $failedIds = [];
-
-        DB::beginTransaction();
-        try {
-            foreach ($validatedData['draft_ids'] as $draftId) {
-                $productDraft = ProductDraft::findOrFail($draftId);
-                
-                // Generate unique code
-                $productDraft->code = $this->generateUniqueProductCode();
-                $productDraft->publish_status = 'published';
-                $productDraft->published_by = Auth::id();
-                $productDraft->published_at = now();
-                $productDraft->save();
-
-                $successIds[] = $draftId;
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Bulk publish completed',
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Bulk publish failed',
-                'error' => $e->getMessage(),
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk delete product drafts.
-     */
-    public function bulkDelete(Request $request): JsonResponse
-    {
-        $validatedData = $request->validate([
-            'draft_ids' => 'required|array',
-            'draft_ids.*' => 'exists:products_draft,id'
-        ]);
-
-        $successIds = [];
-        $failedIds = [];
-
-        DB::beginTransaction();
-        try {
-            foreach ($validatedData['draft_ids'] as $draftId) {
-                $productDraft = ProductDraft::findOrFail($draftId);
-                $productDraft->deleted_by = Auth::id();
-                $productDraft->save();
-                $productDraft->delete();
-
-                $successIds[] = $draftId;
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Bulk delete completed',
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Bulk delete failed',
-                'error' => $e->getMessage(),
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk restore soft-deleted product drafts.
-     */
-    public function bulkRestore(Request $request): JsonResponse
-    {
-        $validatedData = $request->validate([
-            'draft_ids' => 'required|array',
-            'draft_ids.*' => 'exists:products_draft,id'
-        ]);
-
-        $successIds = [];
-        $failedIds = [];
-
-        DB::beginTransaction();
-        try {
-            foreach ($validatedData['draft_ids'] as $draftId) {
-                $productDraft = ProductDraft::withTrashed()->findOrFail($draftId);
-                $productDraft->deleted_by = null;
-                $productDraft->restore();
-
-                $successIds[] = $draftId;
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Bulk restore completed',
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Bulk restore failed',
-                'error' => $e->getMessage(),
-                'data' => [
-                    'success_ids' => $successIds,
-                    'failed_ids' => $failedIds
-                ]
             ], 500);
         }
     }
