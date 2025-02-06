@@ -9,10 +9,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
+
 class ProductController extends Controller
 {
-    /**
-     * Get all products with optional pagination
+   /**
+     * Get all products with optional pagination and search
      *
      * @param Request $request
      * @return JsonResponse
@@ -20,24 +21,21 @@ class ProductController extends Controller
     public function getAll(Request $request): JsonResponse
     {
         try {
-            $perPage = $request->query('per_page', 10);
-            $products = Product::with(['creator', 'updater', 'publisher'])
-                ->orderBy('created_at', 'desc')
-                ->paginate($perPage);
+            $search = $request->query('search');
+            $searchBy = $request->query('search_by', 'name'); // Default to searching by name
 
-            return response()->json([
-                'status' => 'success',
-                'data' => $products,
-                'message' => 'Products retrieved successfully'
-            ], 200);
+            $query = Product::query();
+
+            if ($search) {
+                $query->where($searchBy, 'LIKE', "%{$search}%");
+            }
+
+            $products = $query->paginate(10);
+
+            return response()->json($products);
         } catch (Exception $e) {
             Log::error('Error fetching products: ' . $e->getMessage());
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to retrieve products',
-                'error' => $e->getMessage()
-            ], 500);
+            return response()->json(['error' => 'Error fetching products'], 500);
         }
     }
 

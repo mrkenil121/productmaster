@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Molecule;
 Use App\Jobs\PublishProduct;
+use Illuminate\Support\Facades\Cache;
 
 trait ProductDraftCombinationTrait
 {
@@ -244,7 +245,8 @@ class ProductDraftController extends Controller
                     ]);
                 }
             }
-
+            
+            dd(50);
             // If not found in cache, fetch from database
             $productDraft = ProductDraft::with(['category', 'creator', 'updater', 'publisher'])->find($id);
 
