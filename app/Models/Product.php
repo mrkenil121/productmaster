@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Searchable;
 
 class Product extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Searchable;
 
     public static function boot()
     {
@@ -55,6 +56,28 @@ class Product extends Model
         'deleted_at' => 'datetime',
         'published_at' => 'datetime',
     ];
+
+    public function searchableAs()
+    {
+        return 'published_product_index';
+    }
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'code' => $this->code,
+            'name' => $this->name,
+            'manufacturer' => $this->manufacturer,
+            'combination_string' => $this->combination,
+            'mrp' => $this->mrp,
+            'sales_price' => $this->sales_price,
+            'is_active' => $this->is_active,
+            'is_discontinued' => $this->is_discontinued,
+            'is_assured' => $this->is_assured,
+            'is_refrigerated' => $this->is_refrigerated,
+        ];
+    }
 
     // User relationships
     public function creator()

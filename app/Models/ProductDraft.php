@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Searchable;
 
 class ProductDraft extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes,Searchable;
 
     protected $table = 'products_draft';
 
@@ -44,6 +45,20 @@ class ProductDraft extends Model
         'is_assured' => 'boolean',
         'is_refrigerated' => 'boolean',
     ];
+
+
+    public function SearchableAs()
+    {
+        return 'draft_products_index';
+    }
+
+    public function toSearchableArray()
+    {
+        return [
+            $this->combination,
+            $this->name,
+        ];
+    }
 
     // Relationships
     public function category()
